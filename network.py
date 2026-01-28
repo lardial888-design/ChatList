@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Optional
 
@@ -8,6 +9,7 @@ from models import ModelConfig
 
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class NetworkError(Exception):
@@ -18,6 +20,13 @@ def send_prompt(model: ModelConfig, prompt: str, timeout: int = 20) -> str:
     api_key = os.getenv(model.api_key_env)
     if not api_key:
         raise NetworkError(f"Missing API key in env: {model.api_key_env}")
+
+    logger.info(
+        "Sending prompt to model=%s url=%s prompt_len=%s",
+        model.name,
+        model.api_url,
+        len(prompt),
+    )
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -31,6 +40,7 @@ def send_prompt(model: ModelConfig, prompt: str, timeout: int = 20) -> str:
         )
         response.raise_for_status()
     except requests.RequestException as exc:
+        logger.error("Network error for model=%s: %s", model.name, exc)
         raise NetworkError(str(exc)) from exc
 
     data: Optional[dict] = None
