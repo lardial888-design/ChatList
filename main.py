@@ -7,7 +7,9 @@ from typing import Dict, List, Optional
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -16,6 +18,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -38,14 +41,23 @@ class MainWindow(QMainWindow):
         self.current_prompt_id: Optional[int] = None
         self.temp_results = []
         self.all_prompts: List[Dict[str, str]] = []
+        self.all_models: List[Dict[str, str]] = []
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
+        main_layout = QVBoxLayout()
+        central_widget.setLayout(main_layout)
+
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        self.requests_tab = QWidget()
+        requests_layout = QVBoxLayout()
+        self.requests_tab.setLayout(requests_layout)
+        self.tabs.addTab(self.requests_tab, "Запросы")
 
         top_layout = QHBoxLayout()
-        layout.addLayout(top_layout)
+        requests_layout.addLayout(top_layout)
 
         prompt_layout = QVBoxLayout()
         prompt_layout.addWidget(QLabel("Введите промт:"))
@@ -71,13 +83,13 @@ class MainWindow(QMainWindow):
         self.results_search.setPlaceholderText("Поиск по результатам...")
         self.results_search.textChanged.connect(self.filter_results)
         results_header_layout.addWidget(self.results_search)
-        layout.addLayout(results_header_layout)
+        requests_layout.addLayout(results_header_layout)
 
         self.results_table = QTableWidget(0, 3)
         self.results_table.setHorizontalHeaderLabels(["Модель", "Ответ", "Selected"])
         self.results_table.horizontalHeader().setStretchLastSection(True)
         self.results_table.setSortingEnabled(True)
-        layout.addWidget(self.results_table)
+        requests_layout.addWidget(self.results_table)
 
         buttons_layout = QHBoxLayout()
         self.send_button = QPushButton("Отправить")
@@ -89,7 +101,7 @@ class MainWindow(QMainWindow):
         buttons_layout.addWidget(self.send_button)
         buttons_layout.addWidget(self.save_button)
         buttons_layout.addWidget(self.new_button)
-        layout.addLayout(buttons_layout)
+        requests_layout.addLayout(buttons_layout)
 
         export_layout = QHBoxLayout()
         self.export_md_button = QPushButton("Экспорт Markdown")
@@ -98,9 +110,53 @@ class MainWindow(QMainWindow):
         self.export_json_button.clicked.connect(self.on_export_json)
         export_layout.addWidget(self.export_md_button)
         export_layout.addWidget(self.export_json_button)
-        layout.addLayout(export_layout)
+        requests_layout.addLayout(export_layout)
+
+        self.models_tab = QWidget()
+        models_layout = QVBoxLayout()
+        self.models_tab.setLayout(models_layout)
+        self.tabs.addTab(self.models_tab, "Модели")
+
+        models_layout.addWidget(QLabel("Управление моделями:"))
+        self.models_table = QTableWidget(0, 4)
+        self.models_table.setHorizontalHeaderLabels(
+            ["Имя", "API URL", "API Key Env", "Активна"]
+        )
+        self.models_table.horizontalHeader().setStretchLastSection(True)
+        self.models_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.models_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.models_table.itemSelectionChanged.connect(self.on_model_selected)
+        self.models_table.setSortingEnabled(True)
+        models_layout.addWidget(self.models_table)
+
+        form_layout = QFormLayout()
+        self.model_name_input = QLineEdit()
+        self.model_url_input = QLineEdit()
+        self.model_key_input = QLineEdit()
+        self.model_active_checkbox = QCheckBox("Активна")
+        form_layout.addRow("Имя", self.model_name_input)
+        form_layout.addRow("API URL", self.model_url_input)
+        form_layout.addRow("API Key Env", self.model_key_input)
+        form_layout.addRow("", self.model_active_checkbox)
+        models_layout.addLayout(form_layout)
+
+        model_buttons_layout = QHBoxLayout()
+        self.model_add_button = QPushButton("Добавить")
+        self.model_update_button = QPushButton("Обновить")
+        self.model_delete_button = QPushButton("Удалить")
+        self.model_refresh_button = QPushButton("Обновить список")
+        self.model_add_button.clicked.connect(self.on_model_add)
+        self.model_update_button.clicked.connect(self.on_model_update)
+        self.model_delete_button.clicked.connect(self.on_model_delete)
+        self.model_refresh_button.clicked.connect(self.load_models)
+        model_buttons_layout.addWidget(self.model_add_button)
+        model_buttons_layout.addWidget(self.model_update_button)
+        model_buttons_layout.addWidget(self.model_delete_button)
+        model_buttons_layout.addWidget(self.model_refresh_button)
+        models_layout.addLayout(model_buttons_layout)
 
         self.load_prompts()
+        self.load_models()
 
     def load_prompts(self) -> None:
         self.prompts_list.clear()
@@ -225,6 +281,107 @@ class MainWindow(QMainWindow):
         self.current_prompt_id = None
         self.temp_results = []
         self.results_search.clear()
+
+    def load_models(self) -> None:
+        self.models_table.setRowCount(0)
+        self.all_models = db.list_models()
+        for row in self.all_models:
+            table_row = self.models_table.rowCount()
+            self.models_table.insertRow(table_row)
+
+            name_item = QTableWidgetItem(row["name"])
+            name_item.setData(Qt.UserRole, row["id"])
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.models_table.setItem(table_row, 0, name_item)
+
+            url_item = QTableWidgetItem(row["api_url"])
+            url_item.setFlags(url_item.flags() & ~Qt.ItemIsEditable)
+            self.models_table.setItem(table_row, 1, url_item)
+
+            key_item = QTableWidgetItem(row["api_key_env"])
+            key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)
+            self.models_table.setItem(table_row, 2, key_item)
+
+            active_text = "Да" if row["is_active"] else "Нет"
+            active_item = QTableWidgetItem(active_text)
+            active_item.setData(Qt.UserRole, row["is_active"])
+            active_item.setFlags(active_item.flags() & ~Qt.ItemIsEditable)
+            self.models_table.setItem(table_row, 3, active_item)
+
+    def on_model_selected(self) -> None:
+        items = self.models_table.selectedItems()
+        if not items:
+            return
+        row = items[0].row()
+        name_item = self.models_table.item(row, 0)
+        url_item = self.models_table.item(row, 1)
+        key_item = self.models_table.item(row, 2)
+        active_item = self.models_table.item(row, 3)
+
+        self.model_name_input.setText(name_item.text() if name_item else "")
+        self.model_url_input.setText(url_item.text() if url_item else "")
+        self.model_key_input.setText(key_item.text() if key_item else "")
+        is_active = int(active_item.data(Qt.UserRole)) if active_item else 0
+        self.model_active_checkbox.setChecked(bool(is_active))
+
+    def get_selected_model_id(self) -> Optional[int]:
+        items = self.models_table.selectedItems()
+        if not items:
+            return None
+        row = items[0].row()
+        name_item = self.models_table.item(row, 0)
+        if not name_item:
+            return None
+        return int(name_item.data(Qt.UserRole))
+
+    def on_model_add(self) -> None:
+        name = self.model_name_input.text().strip()
+        url = self.model_url_input.text().strip()
+        key_env = self.model_key_input.text().strip()
+        is_active = 1 if self.model_active_checkbox.isChecked() else 0
+
+        if not name or not url or not key_env:
+            self.show_message("Заполните имя, API URL и API Key Env.")
+            return
+
+        db.add_model(name, url, key_env, is_active)
+        self.load_models()
+        self.show_message("Модель добавлена.")
+
+    def on_model_update(self) -> None:
+        model_id = self.get_selected_model_id()
+        if model_id is None:
+            self.show_message("Выберите модель для обновления.")
+            return
+
+        name = self.model_name_input.text().strip()
+        url = self.model_url_input.text().strip()
+        key_env = self.model_key_input.text().strip()
+        is_active = 1 if self.model_active_checkbox.isChecked() else 0
+
+        if not name or not url or not key_env:
+            self.show_message("Заполните имя, API URL и API Key Env.")
+            return
+
+        db.update_model(model_id, name, url, key_env, is_active)
+        self.load_models()
+        self.show_message("Модель обновлена.")
+
+    def on_model_delete(self) -> None:
+        model_id = self.get_selected_model_id()
+        if model_id is None:
+            self.show_message("Выберите модель для удаления.")
+            return
+
+        confirm = QMessageBox.question(
+            self, "Подтвердите удаление", "Удалить выбранную модель?"
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        db.delete_model(model_id)
+        self.load_models()
+        self.show_message("Модель удалена.")
 
     def get_selected_results(self) -> List[Dict[str, str]]:
         selected = []

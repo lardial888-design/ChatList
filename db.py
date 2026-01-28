@@ -76,6 +76,33 @@ def add_model(name: str, api_url: str, api_key_env: str, is_active: int = 1) -> 
         return int(cur.lastrowid)
 
 
+def list_models() -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, api_url, api_key_env, is_active FROM models ORDER BY id DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_model(
+    model_id: int, name: str, api_url: str, api_key_env: str, is_active: int
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE models
+            SET name = ?, api_url = ?, api_key_env = ?, is_active = ?
+            WHERE id = ?
+            """,
+            (name, api_url, api_key_env, is_active, model_id),
+        )
+
+
+def delete_model(model_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM models WHERE id = ?", (model_id,))
+
+
 def list_active_models() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
